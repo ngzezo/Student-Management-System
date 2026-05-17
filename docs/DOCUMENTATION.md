@@ -998,4 +998,161 @@ rm sms
 
 ---
 
+## 8. Why AVL Instead of Plain BST?
+
+### 8.1 The Worst-Case Problem with a Plain BST
+
+A Binary Search Tree preserves one invariant: every key in the left subtree is smaller than the root and every key in the right subtree is larger.  But it makes **no** promise about the tree's shape.
+
+If you insert students in ascending order of ID — a perfectly natural workflow when IDs are assigned sequentially — every new node becomes the right child of the previous one:
+
+```
+Insert IDs in order: 10, 20, 30, 40, 50
+
+10
+  \
+   20
+     \
+      30
+        \
+         40
+           \
+            50
+```
+
+This is a **degenerate tree** — effectively a linked list.  Its height is `n` (5 in the example), not log₂(n) ≈ 2.3.  Every search, insert, and delete now costs **O(n)** in the worst case.  For a university managing thousands of student records, a 10-fold slow-down from sorted imports is catastrophic.
+
+### 8.2 How AVL Trees Fix It
+
+An AVL tree (named after Adelson-Velsky and Landis, 1962) adds one extra rule on top of the BST invariant:
+
+> **For every node, the heights of its left and right subtrees may differ by at most 1.**
+
+This property — called the **AVL balance invariant** — is enforced automatically after every insert and delete using one or two pointer rewrites called **rotations**.  It can be mathematically proved that an AVL tree of `n` nodes has a height of at most 1.44 log₂(n), which guarantees **O(log n)** worst-case for all core operations.
+
+Taking the same five sorted inserts from above, the AVL tree rebalances itself twice:
+
+```
+After inserting 10, 20:       After inserting 30 (RR imbalance at 10):
+                               rotateLeft(10)
+
+  10                              20
+    \                            /  \
+     20                        10   30
+```
+
+The final tree with all five nodes stays at **height 3** instead of 5 — verified by the `bst_tree_stats` output during the smoke test.
+
+---
+
+### 8.3 The Four Rotation Cases
+
+Each rotation is a small, local pointer reshuffle.  Only two or three pointers change; the rest of the tree is untouched.  Heights are refreshed bottom-up immediately after each rotation.
+
+---
+
+#### LL Case — Single Right Rotation
+
+**When it fires:** The imbalanced node's left subtree is too tall, **and** the left child is itself left-heavy (or balanced).
+
+```
+Before (BF = +2):          After rotateRight(Z):
+
+       Z                         Y
+      / \                       / \
+     Y   T4                    X   Z
+    / \                       /\  / \
+   X   T3                   T1 T2 T3 T4
+  / \
+ T1  T2
+```
+
+**Plain English:** Y rises to become the new root.  Z drops to become Y's right child.  Y's old right subtree (T3) is re-attached as Z's left child — it was between Y and Z in key order before the rotation, and it still is afterward (BST ordering is preserved).
+
+---
+
+#### RR Case — Single Left Rotation
+
+**When it fires:** The imbalanced node's right subtree is too tall, **and** the right child is itself right-heavy (or balanced).
+
+```
+Before (BF = -2):          After rotateLeft(Z):
+
+   Z                               Y
+  / \                             / \
+ T1   Y                          Z   X
+      / \                       /\  / \
+     T2   X                   T1 T2 T3 T4
+          /\
+         T3 T4
+```
+
+**Plain English:** Y rises; Z drops to become Y's left child.  Y's old left subtree (T2) re-attaches as Z's right child — symmetric to the LL case.
+
+---
+
+#### LR Case — Left-Right Double Rotation
+
+**When it fires:** The imbalanced node's left subtree is too tall, **but** the left child is right-heavy.  A single right rotation would not fix it; you need two rotations.
+
+```
+Before (BF = +2,            Step 1 — rotateLeft(Y):   Step 2 — rotateRight(Z):
+left child BF = -1):
+
+       Z                          Z                          X
+      / \                        / \                        / \
+     Y   T4                     X   T4                    Y   Z
+    / \                        / \                       /\  / \
+   T1   X                     Y  T3                    T1 T2 T3 T4
+        /\                   /\
+       T2 T3                T1 T2
+```
+
+**Plain English:** First left-rotate Y so that X rises in Y's place (converting the LR shape into an LL shape).  Then right-rotate Z so that X rises again to become the new subtree root.
+
+---
+
+#### RL Case — Right-Left Double Rotation
+
+**When it fires:** The imbalanced node's right subtree is too tall, **but** the right child is left-heavy.  Symmetric to the LR case.
+
+```
+Before (BF = -2,            Step 1 — rotateRight(Y):  Step 2 — rotateLeft(Z):
+right child BF = +1):
+
+   Z                              Z                          X
+  / \                            / \                        / \
+ T1   Y                         T1   X                    Z   Y
+      / \                           / \                  /\  / \
+     X   T4                        T2   Y               T1 T2 T3 T4
+    /\                                  /\
+   T2 T3                               T3 T4
+```
+
+**Plain English:** First right-rotate Y so that X rises in Y's place (converting the RL shape into an RR shape).  Then left-rotate Z so that X becomes the new subtree root.
+
+---
+
+### 8.4 Updated Complexity Summary
+
+| Operation          | Plain BST (average) | Plain BST (worst case) | **AVL Tree (guaranteed)** |
+|--------------------|---------------------|------------------------|---------------------------|
+| Insert             | O(log n)            | **O(n)**               | **O(log n)**              |
+| Search by ID       | O(log n)            | **O(n)**               | **O(log n)**              |
+| Delete             | O(log n)            | **O(n)**               | **O(log n)**              |
+| Search by Name     | O(n)                | O(n)                   | O(n)                      |
+| Display All        | O(n)                | O(n)                   | O(n)                      |
+| Tree Height        | O(n)                | O(n)                   | **O(1)** ¹                |
+| Student Count      | O(1) ²              | O(1) ²                 | O(1) ²                    |
+| GPA Statistics     | O(n)                | O(n)                   | O(n)                      |
+| Delete All         | O(n)                | O(n)                   | O(n)                      |
+| Predecessor/Succ.  | O(log n)            | **O(n)**               | **O(log n)**              |
+
+¹ Each node stores its height; the root's height is read in O(1) — no traversal needed.  
+² `tree->count` is a live counter updated on every insert and delete.
+
+The AVL rotation overhead (at most two rotations, each O(1)) is paid on the way back up the recursion stack after an insert or delete — this does **not** change the O(log n) asymptotic cost.  The constant factor is negligible in practice.
+
+---
+
 *End of documentation.*
